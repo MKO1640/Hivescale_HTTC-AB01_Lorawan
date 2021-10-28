@@ -1,37 +1,15 @@
 #include <Adafruit_NAU7802.h>
-#include <Wire.h>
-#include <Adafruit_I2CDevice.h>
 
-Adafruit_I2CDevice i2c_dev = Adafruit_I2CDevice(0x2A);
 Adafruit_NAU7802 nau;
 
 void setup() {
-  while (!Serial) { delay(10); }
   Serial.begin(115200);
-  pinMode(Vext, OUTPUT);
-  digitalWrite(Vext, LOW);
-  delay(1000);
-
-  if (!i2c_dev.begin()) {
-    Serial.print("Did not find device at 0x");
-    Serial.println(i2c_dev.address(), HEX);
-    while (1);
-  }
-  else{
-    Serial.print("Device found on address 0x");
-    Serial.println(i2c_dev.address(), HEX);
-    }
-  
-
-
-  Serial.println("seach NAU7802");
+  Serial.println("NAU7802");
   if (! nau.begin()) {
     Serial.println("Failed to find NAU7802");
   }
-  else{
-    Serial.println("Found NAU7802");
-    }
-
+  Serial.println("Found NAU7802");
+  nau.r
   nau.setLDO(NAU7802_3V0);
   Serial.print("LDO voltage set to ");
   switch (nau.getLDO()) {
@@ -72,7 +50,9 @@ void setup() {
   // Take 10 readings to flush out readings
   for (uint8_t i=0; i<10; i++) {
     while (! nau.available()) delay(1);
-    nau.read();
+    int32_t val = nau.read();
+    Serial.print("Read "); Serial.println(val);
+
   }
 
   while (! nau.calibrate(NAU7802_CALMOD_INTERNAL)) {
