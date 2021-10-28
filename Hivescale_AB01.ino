@@ -8,10 +8,9 @@
 #include "Arduino.h"
 #include <Wire.h>
 #include <Adafruit_BME280.h>
+#include "SparkFun_Qwiic_Scale_NAU7802_Arduino_Library.h"
 
 //Set these OTAA parameters to match your app/node in TTN
-//uint8_t devEui[] = { 0x70, 0xB3, 0xD5, 0x7E, 0xD0, 0x04, 0x6E, 0xB5 };
-//uint8_t appEui[] = { 0x70, 0xB3, 0xD5, 0x7E, 0xD0, 0x04, 0x6E, 0xB5 };
 
 uint8_t devEui[] = { 0x07, 0x00, 0xB3, 0x0D, 0x50, 0x7E, 0x0D, 0x00 };
 uint8_t appEui[] = { 0x07, 0x00, 0xB3, 0x0D, 0x50, 0x7E, 0x0D, 0x00 };
@@ -70,7 +69,17 @@ uint8_t appPort = 2;
 */
 uint8_t confirmedNbTrials = 4;
 
-float   lux, co2, tvoc;
+/* This Settings are for the NAU7802
+TODO Config Tool and save Values (No Eprom we need to use the first bytes of Flash */
+#define scale_offset     10270
+#define scale_cal_factor 42182
+#define AVG_SIZE         10
+// Variables need for Nau7802
+float   weight;
+float avgWeights[AVG_SIZE];
+byte avgWeightSpot = 0;
+NAU7802 myScale;
+
 uint16_t baseline;
 uint16_t temperature ;
 uint16_t humidity,pressure;
@@ -80,24 +89,25 @@ Adafruit_Sensor *bme_temp = bme.getTemperatureSensor();
 Adafruit_Sensor *bme_pressure = bme.getPressureSensor();
 Adafruit_Sensor *bme_humidity = bme.getHumiditySensor();
 
+#define Vext_on  digitalWrite(Vext, LOW);
+#define Vext_off digitalWrite(Vext, HIGH);
+
 static void prepareTxFrame( uint8_t port )
 {
-	/*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
-	*appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
-	*if enabled AT, don't modify LORAWAN_APP_DATA_MAX_SIZE, it may cause system hanging or failure.
-	*if disabled AT, LORAWAN_APP_DATA_MAX_SIZE can be modified, the max value is reference to lorawan region and SF.
-	*/
-  pinMode(Vext, OUTPUT);
-  digitalWrite(Vext, LOW);
-  delay(500);
+	Vext_on
+  delay(500); // Wait for starting Sensors
+  Serial.println("read sensors:");
+  ///**************** Read BME280 **************************
+  
+  Serial.println("read BME280:");
   if (!bme.begin()) {
     Serial.println(F("Could not find a valid BME280 sensor, check wiring!"));
     while (1) delay(10);
   }
   
-  bme_temp->printSensorDetails();
-  bme_pressure->printSensorDetails();
-  bme_humidity->printSensorDetails();
+  //bme_temp->printSensorDetails();
+  //bme_pressure->printSensorDetails();
+  //bme_humidity->printSensorDetails();
   sensors_event_t temp_event, pressure_event, humidity_event;
   bme_temp->getEvent(&temp_event);
   bme_pressure->getEvent(&pressure_event);
@@ -106,8 +116,58 @@ static void prepareTxFrame( uint8_t port )
   humidity= humidity_event.relative_humidity*100;
   temperature= (temp_event.temperature+50)*100;
   pressure = (pressure_event.pressure-200)*10;
-   
-  Serial.println("read sensors:");
+
+  bme.MODE_SLEEP;
+
+  ///**************** Read NAU7802 ***************************
+  Wire.begin();
+  Wire.setClock(400000);
+  if (myScale.begin() == false)
+    {Serial.println("Scale not detected. Please check wiring.");}
+  else
+    {Serial.println("Scale detected!");}
+  
+  myScale.setLDO(NAU7802_LDO_2V7);
+  myScale.setGain(128);
+  myScale.setChannel(0);
+  myScale.setSampleRate(NAU7802_SPS_80);
+  myScale.setZeroOffset(scale_offset);
+  myScale.setCalibrationFactor(scale_cal_factor);
+  myScale.calibrateAFE(); //Re-cal analog front end when we change gain, sample rate, or channel 
+  delay(1000);
+  while(myScale.available() == false)
+    delay(1000);
+  
+  if (myScale.available() == true)
+    {
+      long currentReading = myScale.getReading();
+      float currentWeight = myScale.getWeight();
+      weight = 0;
+      Serial.print("Reading: ");
+      Serial.print(currentReading);
+      Serial.print("\tWeight: ");
+      Serial.print(currentWeight, 3); //Print 2 decimal places
+
+      avgWeights[avgWeightSpot++] = currentWeight;
+      if(avgWeightSpot == AVG_SIZE) avgWeightSpot = 0;
+      
+      float avgWeight = 0;
+      for (int x = 0 ; x < AVG_SIZE ; x++)
+        avgWeight += avgWeights[x];
+      weight = avgWeight / AVG_SIZE ;
+    }
+  else
+    {Serial.println("NAU7802 not ready");
+    Serial.println((myScale.getReading()-scale_offset)/scale_cal_factor);}
+  myScale.powerDown();
+  Wire.end();
+  
+// *******************Read 1Wire********************************
+// TODO
+Vext_off
+// ***************** Read Voltage *****************************
+  uint16_t batteryVoltage = getBatteryVoltage();
+
   Serial.print(F("Temperature = "));
   Serial.print(temperature);
   Serial.println(" *C");
@@ -120,12 +180,15 @@ static void prepareTxFrame( uint8_t port )
   Serial.print(pressure);
   Serial.println(" hPa");
 
-  Wire.end();
+  Serial.print(F("batteryVoltage = "));
+  Serial.print(batteryVoltage);
+  Serial.println(" V");
 
+  Serial.print(F("weight = "));
+  Serial.print(weight);
+  Serial.println(" KG");
 
-  digitalWrite(Vext, HIGH);
-  uint16_t batteryVoltage = getBatteryVoltage();
- 
+  //  ***************** Make Payload *****************************
   appData[0] = (uint8_t)(batteryVoltage >> 8);
   appData[1] = (uint8_t)batteryVoltage;
 
@@ -140,7 +203,7 @@ static void prepareTxFrame( uint8_t port )
   
  unsigned char *puc;
 
-  puc = (unsigned char *)(&pressure);
+  puc = (unsigned char *)(&weight);
   appData[8] = puc[0];
   appData[9] = puc[1];
   appData[10] = puc[2];
@@ -157,7 +220,9 @@ static void prepareTxFrame( uint8_t port )
 }
 
 void setup() {
-	Serial.begin(115200);
+	Serial.begin(115200);   // TODO for Power saving switch the serial output off. Switch on by User Button at startup
+
+  pinMode(Vext, OUTPUT); //Set Vext Pin to Output. This pin can use as Power Suply for Sensors up to 350mA  
 
 #if(AT_SUPPORT)
 	enableAt();
@@ -190,8 +255,8 @@ void loop()
 		}
 		case DEVICE_STATE_SEND:
 		{
-			prepareTxFrame( appPort );
-			LoRaWAN.send();
+      prepareTxFrame( appPort );
+			//LoRaWAN.send();
 			deviceState = DEVICE_STATE_CYCLE;
 			break;
 		}
