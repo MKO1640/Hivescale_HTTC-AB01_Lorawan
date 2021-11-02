@@ -1,77 +1,119 @@
-#include <Adafruit_NAU7802.h>
+/*
+  Use the Qwiic Scale to read load cells and scales
+  By: Nathan Seidle @ SparkFun Electronics
+  Date: March 3rd, 2019
+  License: This code is public domain but you buy me a beer if you use this 
+  and we meet someday (Beerware license).
 
-Adafruit_NAU7802 nau;
+  The Qwiic Scale is an I2C device that converts analog signals to a 24-bit
+  digital signal. This makes it possible to create your own digital scale
+  either by hacking an off-the-shelf bathroom scale or by creating your
+  own scale using a load cell.
 
-void setup() {
+  This example merely outputs the raw data from a load cell. For example, the
+  output may be 25776 and change to 43122 when a cup of tea is set on the scale.
+  These values are unitless - they are not grams or ounces. Instead, it is a
+  linear relationship that must be calculated. Remeber y = mx + b?
+  If 25776 is the 'zero' or tare state, and 43122 when I put 15.2oz of tea on the
+  scale, then what is a reading of 57683 in oz?
+
+  (43122 - 25776) = 17346/15.2 = 1141.2 per oz
+  (57683 - 25776) = 31907/1141.2 = 27.96oz is on the scale
+  
+  SparkFun labored with love to create this code. Feel like supporting open
+  source? Buy a board from SparkFun!
+  https://www.sparkfun.com/products/15242
+
+  Hardware Connections:
+  Plug a Qwiic cable into the Qwiic Scale and a RedBoard Qwiic
+  If you don't have a platform with a Qwiic connection use the SparkFun Qwiic Breadboard Jumper (https://www.sparkfun.com/products/14425)
+  Open the serial monitor at 9600 baud to see the output
+*/
+
+#include <Wire.h>
+
+#include "SparkFun_Qwiic_Scale_NAU7802_Arduino_Library.h" // Click here to get the library: http://librarymanager/All#SparkFun_NAU7802
+#include <RunningMedian.h>
+#define Vext_on  digitalWrite(Vext, LOW);
+#define Vext_off digitalWrite(Vext, HIGH);
+RunningMedian samples = RunningMedian(20);
+NAU7802 myScale; //Create instance of the NAU7802 class
+
+void setup()
+{
+  boardInitMcu();
   Serial.begin(115200);
-  Serial.println("NAU7802");
-  if (! nau.begin()) {
-    Serial.println("Failed to find NAU7802");
+  Serial.println("Qwiic Scale Example");
+  pinMode(Vext, OUTPUT);
+  Wire.begin();
+  Wire.setClock(400000);
+  if (myScale.begin() == false)
+  {
+    Serial.println("Scale not detected. Please check wiring. Freezing...");
+    
   }
-  Serial.println("Found NAU7802");
-  nau.r
-  nau.setLDO(NAU7802_3V0);
-  Serial.print("LDO voltage set to ");
-  switch (nau.getLDO()) {
-    case NAU7802_4V5:  Serial.println("4.5V"); break;
-    case NAU7802_4V2:  Serial.println("4.2V"); break;
-    case NAU7802_3V9:  Serial.println("3.9V"); break;
-    case NAU7802_3V6:  Serial.println("3.6V"); break;
-    case NAU7802_3V3:  Serial.println("3.3V"); break;
-    case NAU7802_3V0:  Serial.println("3.0V"); break;
-    case NAU7802_2V7:  Serial.println("2.7V"); break;
-    case NAU7802_2V4:  Serial.println("2.4V"); break;
-    case NAU7802_EXTERNAL:  Serial.println("External"); break;
+  Serial.println("Scale detected!");
+  //myScale.clearBit(4,0x1b);
+  delay(600);
+  if (myScale.getBit(4,0x1b) == true)
+  {
+    Serial.println("PGA-Bypass is enabled.");
   }
-
-  nau.setGain(NAU7802_GAIN_128);
-  Serial.print("Gain set to ");
-  switch (nau.getGain()) {
-    case NAU7802_GAIN_1:  Serial.println("1x"); break;
-    case NAU7802_GAIN_2:  Serial.println("2x"); break;
-    case NAU7802_GAIN_4:  Serial.println("4x"); break;
-    case NAU7802_GAIN_8:  Serial.println("8x"); break;
-    case NAU7802_GAIN_16:  Serial.println("16x"); break;
-    case NAU7802_GAIN_32:  Serial.println("32x"); break;
-    case NAU7802_GAIN_64:  Serial.println("64x"); break;
-    case NAU7802_GAIN_128:  Serial.println("128x"); break;
+  else 
+  {
+      Serial.println("PGA-Bypass is disabled.");
   }
-
-  nau.setRate(NAU7802_RATE_10SPS);
-  Serial.print("Conversion rate set to ");
-  switch (nau.getRate()) {
-    case NAU7802_RATE_10SPS:  Serial.println("10 SPS"); break;
-    case NAU7802_RATE_20SPS:  Serial.println("20 SPS"); break;
-    case NAU7802_RATE_40SPS:  Serial.println("40 SPS"); break;
-    case NAU7802_RATE_80SPS:  Serial.println("80 SPS"); break;
-    case NAU7802_RATE_320SPS:  Serial.println("320 SPS"); break;
-  }
-
-  // Take 10 readings to flush out readings
-  for (uint8_t i=0; i<10; i++) {
-    while (! nau.available()) delay(1);
-    int32_t val = nau.read();
-    Serial.print("Read "); Serial.println(val);
-
-  }
-
-  while (! nau.calibrate(NAU7802_CALMOD_INTERNAL)) {
-    Serial.println("Failed to calibrate internal offset, retrying!");
-    delay(1000);
-  }
-  Serial.println("Calibrated internal offset");
-
-  while (! nau.calibrate(NAU7802_CALMOD_OFFSET)) {
-    Serial.println("Failed to calibrate system offset, retrying!");
-    delay(1000);
-  }
-  Serial.println("Calibrated system offset");
+  myScale.setLDO(NAU7802_LDO_3V0);
+  myScale.setGain(128);
+  myScale.setChannel(0);
+  delay(600);
 }
 
-void loop() {
-  while (! nau.available()) {
-    delay(1);
+
+
+void loop()
+{
+Vext_on
+delay(300);
+if (myScale.begin() == false)
+  {
+    Serial.println("Scale not detected. Please check wiring. Freezing...");
+    
   }
-  int32_t val = nau.read();
-  Serial.print("Read "); Serial.println(val);
+  Serial.print("Scale detected! ");
+  myScale.setLDO(NAU7802_LDO_3V0);
+  myScale.setGain(128);
+  myScale.setChannel(0);
+  myScale.setCalibrationFactor(8800);
+  myScale.setZeroOffset(44.406);
+  myScale.calibrateAFE();
+  myScale.waitForCalibrateAFE();
+  int i=30;
+  delay(30);
+  while(myScale.available() == false|i>2000){
+    delay(1);
+    i++;
+  }
+
+  Serial.print("Available after ");
+  Serial.print(i);
+  Serial.println(" ms");
+    
+  if(myScale.available() == true)
+  {
+    int x = (myScale.getReading()-8800)/44.406;
+    for (int i=0;i<40;i++){
+      samples.add(x);
+    }
+
+    Serial.print("Reading Median: ");
+    Serial.print(samples.getMedian());
+    //Serial.println((myScale.getAverage(10)-8800)/44.406,0);
+    Serial.print("  Average: ");
+    Serial.println((myScale.getAverage(20)-8800)/44.406);
+  }
+  else{Serial.println("not avilable");}
+  myScale.powerDown();
+Vext_off
+delay(3000); 
 }
