@@ -8,82 +8,26 @@
 #include "Arduino.h"
 #include <Wire.h>
 #include <Adafruit_BME280.h>
+#include "Config.cpp"
+
+#ifdef NAU7802_en
 #include "SparkFun_Qwiic_Scale_NAU7802_Arduino_Library.h"
-#include <EEPROM.h>
-#include <cy_em_eeprom.h>
-
-#define Debug
-//Set these OTAA parameters to match your app/node in TTN
-
-uint8_t devEui[] = { 0x07, 0x00, 0xB3, 0x0D, 0x50, 0x7E, 0x0D, 0x00 };
-uint8_t appEui[] = { 0x07, 0x00, 0xB3, 0x0D, 0x50, 0x7E, 0x0D, 0x00 };
-uint8_t appKey[] = { 0x00, 0xF0, 0x90, 0x01, 0x20, 0x08, 0x0B, 0x00, 0x40, 0x00, 0x40, 0x70, 0x03, 0x40, 0x00, 0x0B};
-//uint8_t appKey[] = { 0x0F, 0x90, 0x12, 0x08, 0xB0, 0x40, 0x04, 0x70, 0x34, 0x00, 0xB0, 0x84, 0x00, 0x70, 0x03, 0x08 };
-
-/* ABP para*/
-uint8_t nwkSKey[] = { 0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda,0x85 };
-uint8_t appSKey[] = { 0xd7, 0x2c, 0x78, 0x75, 0x8c, 0xdc, 0xca, 0xbf, 0x55, 0xee, 0x4a, 0x77, 0x8d, 0x16, 0xef,0x67 };
-uint32_t devAddr =  ( uint32_t )0x007e6ae1;
-                           
-uint16_t userChannelsMask[6]={ 0x00FF,0x0000,0x0000,0x0000,0x0000,0x0000 };
-
-/*LoraWan region, select in arduino IDE tools*/
-LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
-
-/*LoraWan Class, Class A and Class C are supported*/
-DeviceClass_t  loraWanClass = LORAWAN_CLASS;
-
-/*the data transmission duty cycle.  value in [ms].*/
-uint32_t appTxDutyCycle = 60 *1000; // sec*ms
-
-/*OTAA or ABP*/
-bool overTheAirActivation = LORAWAN_NETMODE;
-
-/*ADR enable*/
-bool loraWanAdr = LORAWAN_ADR;
-
-/* set LORAWAN_Net_Reserve ON, the node could save the network info to flash, when node reset not need to join again */
-bool keepNet = LORAWAN_NET_RESERVE;
-
-/* Indicates if the node is sending confirmed or unconfirmed messages */
-bool isTxConfirmed = LORAWAN_UPLINKMODE;
-
-/* Application port */
-uint8_t appPort = 2;
-/*!
-* Number of trials to transmit the frame, if the LoRaMAC layer did not
-* receive an acknowledgment. The MAC performs a datarate adaptation,
-* according to the LoRaWAN Specification V1.0.2, chapter 18.4, according
-* to the following table:
-*
-* Transmission nb | Data Rate
-* ----------------|-----------
-* 1 (first)       | DR
-* 2               | DR
-* 3               | max(DR-1,0)
-* 4               | max(DR-1,0)
-* 5               | max(DR-2,0)
-* 6               | max(DR-2,0)
-* 7               | max(DR-3,0)
-* 8               | max(DR-3,0)
-*
-* Note, that if NbTrials is set to 1 or 2, the MAC will not decrease
-* the datarate, in case the LoRaMAC layer did not receive an acknowledgment
-*/
-uint8_t confirmedNbTrials = 4;
-
-/* This Settings are for the NAU7802
-TODO Config Tool and save Values (No Eprom we need to use the first bytes of Flash */
-
 NAU7802 myScale;
-#define scale_offset     8800
-#define scale_cal_factor 44.406
-#define AVG_SIZE         30
-int16_t weight;
+#endif
+
+#ifdef HX711_en
+#include "HX711.h"
+// HX711 circuit wiring
+const int LOADCELL_DOUT_PIN = GPIO2;
+const int LOADCELL_SCK_PIN = GPIO1;
+
+HX711 scale;
+#endif
 
 uint16_t baseline;
 uint16_t temperature ;
 uint16_t humidity,pressure;
+int16_t weight;
 
 Adafruit_BME280 bme; // use I2C interface
 Adafruit_Sensor *bme_temp = bme.getTemperatureSensor();
@@ -122,8 +66,8 @@ static void prepareTxFrame( uint8_t port )
 
   bme.MODE_SLEEP;
 
-  ///**************** Read NAU7802 ***************************
-  
+#ifdef NAU7802_en
+///**************** Read NAU7802 ***************************
   Wire.setClock(400000);
   if (myScale.begin() == false)
     {Serial.println("Scale not detected. Please check wiring.");}
@@ -168,6 +112,10 @@ static void prepareTxFrame( uint8_t port )
     weight = 0;}
   
   myScale.powerDown();
+#endif 
+#ifdef HX711_en
+
+#endif
   Wire.end();
   Vext_off
 // *******************Read 1Wire********************************
@@ -244,7 +192,6 @@ void setup() {
 	//#ifdef Debug
       Serial.begin(115200);   // TODO for Power saving switch the serial output off. Switch on by User Button at startup
   //#endif
-
   pinMode(Vext, OUTPUT); //Set Vext Pin to Output. This pin can use as Power Suply for Sensors up to 350mA  
 
 #if(AT_SUPPORT)
